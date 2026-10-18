@@ -72,6 +72,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.friends_no_notices = i != 0;
     } else if (key == "notice_position") {
         v.notice_position = std::clamp(i, 0, int(NoticeCount) - 1);
+    } else if (key == "hud_mode") {
+        v.hud_mode = std::clamp(i, 0, 2);
     } else if (key == "fps_limit") {
         v.fps_limit = std::clamp(i, 0, 1000);
     } else if (key == "async_pipelines") {
@@ -251,6 +253,12 @@ void Load() {
             if (std::strcmp(temporal, TemporalNames[t]) == 0) v.temporal = t;
         }
     }
+    if (const char* mode = std::getenv("BB_HUD_MODE"); mode && *mode) {
+        v.hud_mode = std::clamp(int(std::strtol(mode, nullptr, 10)), 0, 2);
+    }
+    if (const char* hide = std::getenv("BB_HUD_HIDE"); hide && *hide) {
+        v.hud_hidden = hide[0] == '1';
+    }
     if (const char* full = std::getenv("BB_FULLSCREEN")) {
         v.fullscreen = full[0] == '1';
     }
@@ -384,6 +392,7 @@ void Save() {
     put("friends_no_notices", flag(v.friends_no_notices));
     put("notice_position", std::to_string(v.notice_position.load()));
     put("fps_limit", std::to_string(v.fps_limit.load()));
+    put("hud_mode", std::to_string(v.hud_mode.load()));
     put("async_pipelines", flag(v.async_pipelines));
     put("msaa", flag(v.msaa));
     put("fullscreen", flag(v.fullscreen));

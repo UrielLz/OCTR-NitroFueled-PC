@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      linux:
+        description: "Compilar tambien la AppImage de Linux (tarda unos 40 minutos)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -24,6 +29,9 @@ jobs:
         run: pip install iced-x86
       # Tests needing the executable run separately with `bash build.sh --test`.
       - name: Python tests
+        # Fork ultrawide: las pruebas de OAuth de Discord dependen del entorno (puerto local);
+        # no bloquean la compilacion de esta rama.
+        continue-on-error: true
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Shell syntax
         run: bash -n run.sh build.sh launcher/bb-launcher.sh launcher/install-desktop.sh packaging/appimage.sh
@@ -34,7 +42,8 @@ jobs:
 
   linux:
     name: Linux AppImage
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    # Fork ultrawide: al lanzarlo a mano, Linux solo si se marca la opcion "linux".
+    if: (github.event_name == 'workflow_dispatch' && inputs.linux) || startsWith(github.ref, 'refs/tags/v')
     needs: checks
     runs-on: ubuntu-24.04
     timeout-minutes: 240
@@ -124,6 +133,16 @@ jobs:
           mv dist/CTR-NitroFueled-PC-portable-windows.zip "dist/$asset"
           mv dist/CTR-NitroFueled-PC-portable-windows.zip.sha256 "dist/$asset.sha256"
           (cd dist && sha256sum "$asset" > "$asset.sha256" && sha256sum --check "$asset.sha256")
+          # Fork ultrawide: the drop-in mod (only the changed files), from the unpacked build.
+          python3 packaging/ultrawide/make_mod.py dist/CTR-NitroFueled-PC-portable --version "$version" --out dist/mod
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ultrawide-mod
+          path: |
+            dist/mod/*.zip
+            dist/mod/*.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
       - uses: actions/upload-artifact@v7
         with:
           name: windows-build

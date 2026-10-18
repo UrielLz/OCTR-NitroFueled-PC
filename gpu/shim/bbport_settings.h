@@ -119,6 +119,12 @@ struct Values {
     /// shader no longer stops the game; a pass drawn every frame may miss a frame or two.
     /// Experimental (STATUS.md, issue #2). Applies at once. BB_ASYNC_PIPELINES overrides it.
     std::atomic<bool> async_pipelines{false};
+    /// Ultrawide: como se acomoda el HUD cuando la pantalla es mas ancha que 16:9. 0: anclado a
+    /// los bordes, 1: franja 16:9 centrada, 2: estirado (como el juego). bbport.ini hud_mode,
+    /// BB_HUD_MODE lo cambia al iniciar. Se aplica al momento.
+    std::atomic<int> hud_mode{0};
+    /// Ultrawide: HUD oculto (Ctrl+Alt+H, doble clic de R3 o el menu del juego). No se guarda: BB_HUD_HIDE=1 al iniciar.
+    std::atomic<bool> hud_hidden{false};
     /// SacredFire: the game's 2x MSAA (G-buffer and forward passes). Off by default: on the host
     /// GPU, single-sample colour drawn over the 2x depth buffer blends twice along triangle edges
     /// (dotted lines in skies and light shafts, GitHub issues #16/#18), and at the internal

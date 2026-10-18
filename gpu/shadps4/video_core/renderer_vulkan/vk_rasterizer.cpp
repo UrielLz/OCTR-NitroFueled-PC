@@ -5,6 +5,9 @@
 #include <dlfcn.h>
 #endif
 #include <map>
+#include <bit>
+#include <cstring>
+#include <unordered_map>
 #include <unordered_set>
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
@@ -650,6 +653,129 @@ static std::pair<u32, u32> GetDrawOffsets(
     }
     return {vertex_offset, instance_offset};
 }
+
+
+// Ultrawide: posicion horizontal de un dibujo del HUD, leida de su atributo de posicion (el
+// primero del fetch shader). Devuelve el centro normalizado 0..1 en la pantalla del juego y
+// el ancho relativo, o nada si el formato o el espacio de coordenadas no se reconocen.
+namespace {
+struct HudBounds {
+    float min_x = 0.0f, max_x = 0.0f;
+    bool valid = false;
+};
+
+float HudHalfToFloat(u16 h) {
+    const u32 sign = u32(h >> 15) << 31;
+    u32 exp = (h >> 10) & 0x1f, mant = h & 0x3ff;
+    u32 bits;
+    if (exp == 0) {
+        bits = sign; // ceros y subnormales: suficiente para posiciones de pantalla
+    } else if (exp == 31) {
+        bits = sign | 0x7f800000u | (mant << 13);
+    } else {
+        bits = sign | ((exp + 112) << 23) | (mant << 13);
+    }
+    float f;
+    std::memcpy(&f, &bits, sizeof(f));
+    return f;
+}
+
+HudBounds HudReadBounds(const AmdGpu::Regs& regs, const Shader::Info& vs,
+                        const std::optional<Shader::Gcn::FetchShaderData>& fetch,
+                        bool is_indexed, u32 index_offset, Core::MemoryManager* memory) {
+    HudBounds out;
+    if (!fetch || fetch->attributes.empty()) return out;
+    const auto* attr = &fetch->attributes[0];
+    for (const auto& a : fetch->attributes) {
+        if (a.semantic == 0) { attr = &a; break; }
+    }
+    if (attr->GetStepRate() != Shader::Gcn::VertexAttribute::None) return out;
+    const AmdGpu::Buffer vb = attr->GetSharp(vs);
+    const u32 stride = vb.GetStride();
+    const auto dfmt = vb.GetDataFmt();
+    const auto nfmt = vb.GetNumberFmt();
+    if (!vb.Valid() || stride == 0 || vb.base_address == 0) return out;
+    const bool f32 = nfmt == AmdGpu::NumberFormat::Float &&
+                     (dfmt == AmdGpu::DataFormat::Format32_32 ||
+                      dfmt == AmdGpu::DataFormat::Format32_32_32 ||
+                      dfmt == AmdGpu::DataFormat::Format32_32_32_32);
+    const bool f16 = nfmt == AmdGpu::NumberFormat::Float &&
+                     (dfmt == AmdGpu::DataFormat::Format16_16 ||
+                      dfmt == AmdGpu::DataFormat::Format16_16_16_16);
+    const bool sint16 = (nfmt == AmdGpu::NumberFormat::Sint || nfmt == AmdGpu::NumberFormat::Sscaled) &&
+                     (dfmt == AmdGpu::DataFormat::Format16_16 ||
+                      dfmt == AmdGpu::DataFormat::Format16_16_16_16);
+    if (!f32 && !f16 && !sint16) return out;
+    const u64 size = vb.GetSize();
+    if (!memory->IsValidGpuMapping(vb.base_address, 0) ||
+        memory->ClampRangeSize(vb.base_address, size) != size) {
+        return out;
+    }
+    const auto [base_vertex, first_instance] = GetDrawOffsets(regs, vs, fetch);
+    (void)first_instance;
+    const u32 count = std::min<u32>(regs.num_indices, 4096);
+    if (count == 0) return out;
+    const auto read_x = [&](u64 vertex, float& x) {
+        const u64 offset = vertex * stride;
+        if (offset + 4 > size) return false;
+        const auto* p = reinterpret_cast<const u8*>(vb.base_address + offset);
+        if (f32) {
+            std::memcpy(&x, p, 4);
+        } else if (f16) {
+            u16 h;
+            std::memcpy(&h, p, 2);
+            x = HudHalfToFloat(h);
+        } else {
+            s16 v;
+            std::memcpy(&v, p, 2);
+            x = float(v);
+        }
+        return std::isfinite(x);
+    };
+    float mn = 1e30f, mx = -1e30f;
+    u32 seen = 0;
+    if (is_indexed) {
+        const u32 index_size = regs.index_buffer_type.index_type == AmdGpu::IndexType::Index16 ? 2u : 4u;
+        const VAddr index_address =
+            regs.index_base_address.Address<VAddr>() + u64(index_offset) * index_size;
+        const u64 bytes = u64(count) * index_size;
+        if (!index_address || !memory->IsValidGpuMapping(index_address, 0) ||
+            memory->ClampRangeSize(index_address, bytes) != bytes) {
+            return out;
+        }
+        for (u32 i = 0; i < count; ++i) {
+            u32 idx;
+            if (index_size == 2) {
+                u16 v;
+                std::memcpy(&v, reinterpret_cast<const u8*>(index_address) + i * 2, 2);
+                if (v == 0xffff && regs.enable_primitive_restart) continue;
+                idx = v;
+            } else {
+                std::memcpy(&idx, reinterpret_cast<const u8*>(index_address) + i * 4, 4);
+                if (idx == 0xffffffffu && regs.enable_primitive_restart) continue;
+            }
+            float x;
+            if (!read_x(u64(base_vertex) + idx, x)) return out;
+            mn = std::min(mn, x);
+            mx = std::max(mx, x);
+            ++seen;
+        }
+    } else {
+        for (u32 i = 0; i < count; ++i) {
+            float x;
+            if (!read_x(u64(base_vertex) + i, x)) return out;
+            mn = std::min(mn, x);
+            mx = std::max(mx, x);
+            ++seen;
+        }
+    }
+    if (seen == 0) return out;
+    out.min_x = mn;
+    out.max_x = mx;
+    out.valid = true;
+    return out;
+}
+} // namespace
 
 void Rasterizer::EliminateFastClear() {
     auto& col_buf = Regs().color_buffers[0];
@@ -1493,6 +1619,124 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         regs.color_buffers[0] && FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address());
     const bool display_start = display_draw && !last_draw_display;
     last_draw_display = display_draw;
+    // Ultrawide: BB_HUD_ASPECT (por defecto 16:9; 0 lo desactiva) limita el HUD a esa proporcion
+    // cuando el buffer de pantalla es mas ancho. El primer dibujo (la escena) queda completo.
+    hud_scale = 1.0f;
+    hud_offset = 0.0f;
+    // Ultrawide: HUD oculto (Ctrl+Alt+H, doble clic de R3 o el menu del juego): los dibujos sobre la escena no se graban.
+    if (display_draw && !display_start && BbSettings::Get().hud_hidden.load(std::memory_order_relaxed)) {
+        return;
+    }
+    const int hud_mode = BbSettings::Get().hud_mode.load(std::memory_order_relaxed);
+    if (display_draw && !display_start && hud_mode != 2) {
+        static const float hud_aspect = [] {
+            const char* env = std::getenv("BB_HUD_ASPECT");
+            return env ? float(std::strtod(env, nullptr)) : 16.0f / 9.0f;
+        }();
+        const auto& cb = regs.color_buffers[0];
+        const float width = float(cb.Pitch());
+        const float height = float(cb.Height());
+        if (hud_aspect > 0.0f && height > 0.0f && width / height > hud_aspect + 0.01f) {
+            hud_scale = height * hud_aspect / width;
+            const float free = width * (1.0f - hud_scale); // ancho fuera de la franja 16:9
+            hud_offset = free * 0.5f;
+            // Ultrawide: hud_mode 0 (por defecto) pega a los bordes los elementos del
+            // tercio izquierdo y derecho de la franja, como en la pantalla 16:9 original. Lo
+            // que no se puede ubicar (formato desconocido, dibujos anchos) queda centrado.
+            static const bool anchor_env = [] {
+                const char* env = std::getenv("BB_HUD_ANCHOR");
+                return !env || env[0] != '0';
+            }();
+            const bool anchor = anchor_env && hud_mode == 0;
+            static const bool log = [] {
+                const char* env = std::getenv("BB_HUD_LOG");
+                return env && env[0] == '1';
+            }();
+            if (anchor) {
+                const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);
+                const HudBounds b = HudReadBounds(regs, vs, pipeline->GetFetchShader(),
+                                                  is_indexed, index_offset, memory);
+                // Espacio de coordenadas: pixeles del destino (recorte desactivado o valores
+                // dentro de su ancho) o NDC [-1, 1].
+                // Las cajas en pixeles pueden salirse de la pantalla (fondos con margen, paneles
+                // que entran deslizandose): se aceptan hasta media pantalla fuera de cada lado.
+                float u0 = -1.0f, u1 = -1.0f;
+                bool known = false;
+                const char* space = "?";
+                if (b.valid) {
+                    if (!regs.IsClipDisabled() && b.min_x >= -1.01f && b.max_x <= 1.01f &&
+                        b.max_x - b.min_x < 1.9f) {
+                        u0 = (b.min_x + 1.0f) * 0.5f;
+                        u1 = (b.max_x + 1.0f) * 0.5f;
+                        known = true;
+                        space = "ndc";
+                    } else if (b.min_x >= -0.5f * width && b.max_x <= 1.5f * width &&
+                               b.max_x - b.min_x > 2.5f) {
+                        u0 = b.min_x / width;
+                        u1 = b.max_x / width;
+                        known = true;
+                        space = "px";
+                    }
+                }
+                // Dibujos con la misma caja repetida en el cuadro anterior: geometria local
+                // (un quad unidad con matriz), no posiciones de pantalla; quedan centrados.
+                const u32 frame = BbStats::frame_number.load(std::memory_order_relaxed);
+                if (frame != hud_frame) {
+                    hud_frame = frame;
+                    hud_prev_boxes.swap(hud_boxes);
+                    hud_boxes.clear();
+                    // Menus y pantallas de carga: un cuadro con un panel ancho (fondo, barra,
+                    // ventana) se dibuja entero en la franja 16:9 centrada, para que el texto y
+                    // los iconos no se separen de sus paneles. Se mantiene 10 cuadros despues del
+                    // ultimo panel ancho para que no parpadee en las transiciones.
+                    hud_menu_hold = hud_frame_wide ? 10u : hud_menu_hold > 0 ? hud_menu_hold - 1 : 0u;
+                    hud_frame_wide = false;
+                    hud_frame_full = 0;
+                    hud_frame_panels = 0;
+                    hud_log_frame = log && (frame % 300u) == 0u;
+                }
+                const u64 key = (u64(std::bit_cast<u32>(b.min_x)) << 32) |
+                                std::bit_cast<u32>(b.max_x);
+                hud_boxes[key] += 1;
+                const auto prev = hud_prev_boxes.find(key);
+                // Solo una caja diminuta (quad unidad) repetida es geometria local; un fondo a
+                // pantalla completa dibujado varias veces sigue siendo una posicion real.
+                const bool repeated = b.valid && b.max_x - b.min_x <= 2.5f &&
+                                      prev != hud_prev_boxes.end() && prev->second >= 4;
+                const bool usable = known && !repeated;
+                const bool wide = usable && u1 - u0 >= 0.45f;
+                // Fondos, oscurecidos y fundidos que cubren todo el ancho: se dejan a pantalla
+                // completa (sin franja) para que no queden bordes de otro tono a los lados.
+                const bool full = usable && u0 <= 0.02f && u1 >= 0.98f;
+                // Medido en carrera (BB_HUD_LOG): el HUD no dibuja nada a todo el ancho y como
+                // mucho un texto ancho suelto (avisos como la ultima vuelta). Menus, pausa y
+                // cargas dibujan un fondo completo o varios paneles. Un cuadro es menu si tiene
+                // un dibujo a pantalla completa o dos paneles anchos.
+                if (full) ++hud_frame_full;
+                else if (wide) ++hud_frame_panels;
+                hud_frame_wide = hud_frame_full > 0 || hud_frame_panels >= 2;
+                const bool menu = hud_menu_hold > 0 || hud_frame_wide;
+                int zone = 1; // 0 izquierda, 1 centro, 2 derecha
+                if (full) {
+                    hud_scale = 1.0f;
+                    zone = -1;
+                } else if (!menu && usable && u1 - u0 < 0.45f) {
+                    const float centre = (u0 + u1) * 0.5f;
+                    zone = centre < 0.36f ? 0 : centre > 0.64f ? 2 : 1;
+                }
+                hud_offset = zone < 0 ? 0.0f : free * 0.5f * float(zone);
+                // BB_HUD_LOG=1: un cuadro de cada 300 (unos 5 s a 60 FPS), hasta 6000 lineas.
+                if (hud_log_frame && hud_log_lines < 6000) {
+                    ++hud_log_lines;
+                    std::printf("HUD: frame %u vs %016llx clip_off %d idx %d n %u box %.3f..%.3f "
+                                "%s u %.3f..%.3f rep %d menu %d zone %d\n",
+                                frame, (unsigned long long)vs.pgm_hash, int(regs.IsClipDisabled()),
+                                int(is_indexed), u32(regs.num_indices), b.min_x, b.max_x, space,
+                                u0, u1, int(repeated), int(menu), zone);
+                }
+            }
+        }
+    }
     if (display_start) {
         // The previous draw's target is the finished scene the display pass stretches.
         fsr_pending = (BbSettings::Get().temporal == BbSettings::TemporalFsr1 || ctr_fsr3->Enabled()) &&
@@ -1746,6 +1990,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
 void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_indexed,
                                     const IndirectDraw& indirect) {
+    hud_scale = 1.0f; // Ultrawide: solo los dibujos directos del HUD se comprimen
+    hud_offset = 0.0f;
     buffer_cache.NewPacket();
     if (DrawPipe::OnStageB()) {
         FrameCapture::Poll();
@@ -4221,6 +4467,11 @@ void Rasterizer::UpdateViewportScissorState() const {
             viewport.height = yscale * 2.0f * target_scale[1];
         }
 
+        if (hud_scale != 1.0f) {
+            // Ultrawide: x' = offset + x * scale, en pixeles del destino.
+            viewport.x = hud_offset * target_scale[0] + viewport.x * hud_scale;
+            viewport.width *= hud_scale;
+        }
         viewports.push_back(viewport);
 
         auto vp_scsr = scsr;
@@ -4234,7 +4485,21 @@ void Rasterizer::UpdateViewportScissorState() const {
             vp_scsr.bottom_right_y = std::min(AmdGpu::Scissor::Clamp(vp_scsr.bottom_right_y),
                                               regs.viewport_scissors[i].bottom_right_y);
         }
-        if (target_scale[0] != 1.0f || target_scale[1] != 1.0f) {
+        if (hud_scale != 1.0f) {
+            // Ultrawide: el scissor sigue la misma compresion que el viewport.
+            const auto hud_x = [&](s32 v) {
+                return s32(std::lround((hud_offset + float(v) * hud_scale) * target_scale[0]));
+            };
+            const auto scale_y = [&](s32 v) { return s32(std::lround(float(v) * target_scale[1])); };
+            const s32 x0 = hud_x(vp_scsr.top_left_x);
+            const s32 x1 = hud_x(vp_scsr.top_left_x + s32(vp_scsr.GetWidth()));
+            const s32 y0 = scale_y(vp_scsr.top_left_y);
+            const s32 y1 = scale_y(vp_scsr.top_left_y + s32(vp_scsr.GetHeight()));
+            scissors.push_back({
+                .offset = {x0, y0},
+                .extent = {u32(std::max(x1 - x0, 0)), u32(std::max(y1 - y0, 0))},
+            });
+        } else if (target_scale[0] != 1.0f || target_scale[1] != 1.0f) {
             const auto scale = [](s32 v, float f) { return s32(std::lround(float(v) * f)); };
             const s32 x0 = scale(vp_scsr.top_left_x, target_scale[0]);
             const s32 y0 = scale(vp_scsr.top_left_y, target_scale[1]);
