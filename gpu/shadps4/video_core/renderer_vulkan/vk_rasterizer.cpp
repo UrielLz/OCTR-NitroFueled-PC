@@ -1623,7 +1623,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // cuando el buffer de pantalla es mas ancho. El primer dibujo (la escena) queda completo.
     hud_scale = 1.0f;
     hud_offset = 0.0f;
-    // Ultrawide: HUD oculto (F9 o el menu del juego): los dibujos sobre la escena no se graban.
+    // Ultrawide: HUD oculto (Ctrl+Alt+H, doble clic de R3 o el menu del juego): los dibujos sobre la escena no se graban.
     if (display_draw && !display_start && BbSettings::Get().hud_hidden.load(std::memory_order_relaxed)) {
         return;
     }

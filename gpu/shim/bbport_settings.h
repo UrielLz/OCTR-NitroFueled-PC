@@ -112,7 +112,7 @@ struct Values {
     /// los bordes, 1: franja 16:9 centrada, 2: estirado (como el juego). bbport.ini hud_mode,
     /// BB_HUD_MODE lo cambia al iniciar. Se aplica al momento.
     std::atomic<int> hud_mode{0};
-    /// Ultrawide: HUD oculto (F9 o el menu del juego). No se guarda: BB_HUD_HIDE=1 al iniciar.
+    /// Ultrawide: HUD oculto (Ctrl+Alt+H, doble clic de R3 o el menu del juego). No se guarda: BB_HUD_HIDE=1 al iniciar.
     std::atomic<bool> hud_hidden{false};
     /// SacredFire: the game's 2x MSAA (G-buffer and forward passes). Off by default: on the host
     /// GPU, single-sample colour drawn over the 2x depth buffer blends twice along triangle edges
