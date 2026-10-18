@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      linux:
+        description: "Compilar tambien la AppImage de Linux (tarda unos 40 minutos)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,7 +39,8 @@ jobs:
 
   linux:
     name: Linux AppImage
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    # Fork ultrawide: al lanzarlo a mano, Linux solo si se marca la opcion "linux".
+    if: (github.event_name == 'workflow_dispatch' && inputs.linux) || startsWith(github.ref, 'refs/tags/v')
     needs: checks
     runs-on: ubuntu-24.04
     timeout-minutes: 240
