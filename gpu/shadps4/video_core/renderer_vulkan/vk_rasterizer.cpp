@@ -1691,6 +1691,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                     // ultimo panel ancho para que no parpadee en las transiciones.
                     hud_menu_hold = hud_frame_wide ? 10u : hud_menu_hold > 0 ? hud_menu_hold - 1 : 0u;
                     hud_frame_wide = false;
+                    hud_frame_full = 0;
+                    hud_frame_panels = 0;
                     hud_log_frame = log && (frame % 300u) == 0u;
                 }
                 const u64 key = (u64(std::bit_cast<u32>(b.min_x)) << 32) |
@@ -1706,9 +1708,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 // Fondos, oscurecidos y fundidos que cubren todo el ancho: se dejan a pantalla
                 // completa (sin franja) para que no queden bordes de otro tono a los lados.
                 const bool full = usable && u0 <= 0.02f && u1 >= 0.98f;
-                // Un panel (ancho pero no a pantalla completa) marca el cuadro como menu; los
-                // fondos completos no, porque la carrera tambien dibuja capas a todo el ancho.
-                hud_frame_wide = hud_frame_wide || (wide && !full);
+                // Medido en carrera (BB_HUD_LOG): el HUD no dibuja nada a todo el ancho y como
+                // mucho un texto ancho suelto (avisos como la ultima vuelta). Menus, pausa y
+                // cargas dibujan un fondo completo o varios paneles. Un cuadro es menu si tiene
+                // un dibujo a pantalla completa o dos paneles anchos.
+                if (full) ++hud_frame_full;
+                else if (wide) ++hud_frame_panels;
+                hud_frame_wide = hud_frame_full > 0 || hud_frame_panels >= 2;
                 const bool menu = hud_menu_hold > 0 || hud_frame_wide;
                 int zone = 1; // 0 izquierda, 1 centro, 2 derecha
                 if (full) {

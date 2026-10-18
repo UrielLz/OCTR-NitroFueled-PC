@@ -633,7 +633,9 @@ private:
     u32 hud_frame = 0;      ///< cuadro de hud_boxes
     u32 hud_log_lines = 0;  ///< BB_HUD_LOG: lineas impresas
     u32 hud_menu_hold = 0;      ///< cuadros que el HUD sigue en modo menu (centrado)
-    bool hud_frame_wide = false; ///< este cuadro dibujo un panel ancho (menu o carga)
+    bool hud_frame_wide = false; ///< este cuadro es de menu o carga (ver DrawRecord)
+    u32 hud_frame_full = 0;      ///< dibujos a pantalla completa en este cuadro
+    u32 hud_frame_panels = 0;    ///< paneles anchos (>=45%, no completos) en este cuadro
     bool hud_log_frame = false;  ///< BB_HUD_LOG: este cuadro se registra
     std::unordered_map<u64, u32> hud_boxes, hud_prev_boxes; ///< cajas del HUD por cuadro
     // SacredFire: FSR 1 in the display pass (bbport.ini fsr1). CTR stretches its finished scene
