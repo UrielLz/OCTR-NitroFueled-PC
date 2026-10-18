@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <unordered_map>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -629,6 +630,9 @@ private:
     // del juego) se aplican al viewport y al scissor. hud_scale = 1 deja el dibujo intacto.
     float hud_scale = 1.0f;
     float hud_offset = 0.0f;
+    u32 hud_frame = 0;      ///< cuadro de hud_boxes
+    u32 hud_log_lines = 0;  ///< BB_HUD_LOG: lineas impresas
+    std::unordered_map<u64, u32> hud_boxes, hud_prev_boxes; ///< cajas del HUD por cuadro
     // SacredFire: FSR 1 in the display pass (bbport.ini fsr1). CTR stretches its finished scene
     // (the last pass before the display pass) into the larger display buffer and draws the HUD
     // on top; while the display pass samples that image it reads its FSR 1 upscale instead.
