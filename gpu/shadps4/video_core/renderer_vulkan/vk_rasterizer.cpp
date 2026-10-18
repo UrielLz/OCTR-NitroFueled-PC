@@ -1493,6 +1493,23 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         regs.color_buffers[0] && FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address());
     const bool display_start = display_draw && !last_draw_display;
     last_draw_display = display_draw;
+    // Ultrawide: BB_HUD_ASPECT (por defecto 16:9; 0 lo desactiva) limita el HUD a esa proporcion
+    // cuando el buffer de pantalla es mas ancho. El primer dibujo (la escena) queda completo.
+    hud_scale = 1.0f;
+    hud_offset = 0.0f;
+    if (display_draw && !display_start) {
+        static const float hud_aspect = [] {
+            const char* env = std::getenv("BB_HUD_ASPECT");
+            return env ? float(std::strtod(env, nullptr)) : 16.0f / 9.0f;
+        }();
+        const auto& cb = regs.color_buffers[0];
+        const float width = float(cb.Pitch());
+        const float height = float(cb.Height());
+        if (hud_aspect > 0.0f && height > 0.0f && width / height > hud_aspect + 0.01f) {
+            hud_scale = height * hud_aspect / width;
+            hud_offset = width * (1.0f - hud_scale) * 0.5f;
+        }
+    }
     if (display_start) {
         // The previous draw's target is the finished scene the display pass stretches.
         fsr_pending = (BbSettings::Get().temporal == BbSettings::TemporalFsr1 || ctr_fsr3->Enabled()) &&
@@ -1746,6 +1763,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
 void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_indexed,
                                     const IndirectDraw& indirect) {
+    hud_scale = 1.0f; // Ultrawide: solo los dibujos directos del HUD se comprimen
+    hud_offset = 0.0f;
     buffer_cache.NewPacket();
     if (DrawPipe::OnStageB()) {
         FrameCapture::Poll();
@@ -4154,6 +4173,11 @@ void Rasterizer::UpdateViewportScissorState() const {
             viewport.height = yscale * 2.0f * target_scale[1];
         }
 
+        if (hud_scale != 1.0f) {
+            // Ultrawide: x' = offset + x * scale, en pixeles del destino.
+            viewport.x = hud_offset * target_scale[0] + viewport.x * hud_scale;
+            viewport.width *= hud_scale;
+        }
         viewports.push_back(viewport);
 
         auto vp_scsr = scsr;
@@ -4167,7 +4191,21 @@ void Rasterizer::UpdateViewportScissorState() const {
             vp_scsr.bottom_right_y = std::min(AmdGpu::Scissor::Clamp(vp_scsr.bottom_right_y),
                                               regs.viewport_scissors[i].bottom_right_y);
         }
-        if (target_scale[0] != 1.0f || target_scale[1] != 1.0f) {
+        if (hud_scale != 1.0f) {
+            // Ultrawide: el scissor sigue la misma compresion que el viewport.
+            const auto hud_x = [&](s32 v) {
+                return s32(std::lround((hud_offset + float(v) * hud_scale) * target_scale[0]));
+            };
+            const auto scale_y = [&](s32 v) { return s32(std::lround(float(v) * target_scale[1])); };
+            const s32 x0 = hud_x(vp_scsr.top_left_x);
+            const s32 x1 = hud_x(vp_scsr.top_left_x + s32(vp_scsr.GetWidth()));
+            const s32 y0 = scale_y(vp_scsr.top_left_y);
+            const s32 y1 = scale_y(vp_scsr.top_left_y + s32(vp_scsr.GetHeight()));
+            scissors.push_back({
+                .offset = {x0, y0},
+                .extent = {u32(std::max(x1 - x0, 0)), u32(std::max(y1 - y0, 0))},
+            });
+        } else if (target_scale[0] != 1.0f || target_scale[1] != 1.0f) {
             const auto scale = [](s32 v, float f) { return s32(std::lround(float(v) * f)); };
             const s32 x0 = scale(vp_scsr.top_left_x, target_scale[0]);
             const s32 y0 = scale(vp_scsr.top_left_y, target_scale[1]);

@@ -624,6 +624,11 @@ private:
     bool pipeline_is_compute = false; ///< bbport: the bound pipeline of BindResources
     bool scene_debug_frame = false; ///< BB_SCENE_DEBUG: this frame's passes are printed
     bool last_draw_display = false; ///< the previous draw targeted a display buffer
+    // Ultrawide: los dibujos del HUD (los del buffer de pantalla despues del primero, que copia
+    // la escena) se comprimen en X a una franja 16:9 centrada: hud_scale y hud_offset (pixeles
+    // del juego) se aplican al viewport y al scissor. hud_scale = 1 deja el dibujo intacto.
+    float hud_scale = 1.0f;
+    float hud_offset = 0.0f;
     // SacredFire: FSR 1 in the display pass (bbport.ini fsr1). CTR stretches its finished scene
     // (the last pass before the display pass) into the larger display buffer and draws the HUD
     // on top; while the display pass samples that image it reads its FSR 1 upscale instead.

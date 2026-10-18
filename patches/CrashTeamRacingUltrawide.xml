@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ultrawide experimental para CTR Nitro-Fueled 1.21 (build firmware 6.72+).
+     La configuracion de pantalla del juego (0x17a9d61) toma el ancho y alto de salida de
+     sus ajustes internos. Estos parches fijan esos valores a una resolucion 21:9.
+     Usar con Resolucion interna = 1080p (sin camino PS4 Pro) y escalado FSR 1 o apagado. -->
+<Patch>
+    <TitleID>
+        <ID>CUSA13795</ID>
+    </TitleID>
+    <Metadata Title="Crash Team Racing Nitro-Fueled"
+              Name="Ultrawide 2560x1080"
+              Note="Fija la salida del juego a 2560x1080 (21:9). Probar primero este."
+              Author="Uriel / ctr_uw"
+              PatchVer="0.1"
+              AppVer="01.21"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <!-- mov eax,[r12+0x10] / test / jg / mov eax,[r12+8]  ->  mov eax,2560 + nops -->
+            <Line Type="bytes" Address="0x017a9d61" Value="b8000a0000909090909090909090"
+                  Signature="41 8b 44 24 10 85 c0 7f 05 41 8b 44 24 08 41 89 86 40 05 00 00" SignatureOffset="0x0"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="Crash Team Racing Nitro-Fueled"
+              Name="Ultrawide 3440x1440 (pesado)"
+              Note="Fija la salida a 3440x1440 nativo. Mas carga de GPU y memoria; puede fallar al arrancar."
+              Author="Uriel / ctr_uw"
+              PatchVer="0.1"
+              AppVer="01.21"
+              AppElf="eboot.bin"
+              isEnabled="false">
+        <PatchList>
+            <!-- ancho: mov eax,3440 -->
+            <Line Type="bytes" Address="0x017a9d61" Value="b8700d0000909090909090909090"
+                  Signature="41 8b 44 24 10 85 c0 7f 05 41 8b 44 24 08 41 89 86 40 05 00 00" SignatureOffset="0x0"/>
+            <!-- alto: mov eax,1440 -->
+            <Line Type="bytes" Address="0x017a9d76" Value="b8a0050000909090909090909090"
+                  Signature="41 8b 44 24 14 85 c0 7f 05 41 8b 44 24 0c 41 89 86 44 05 00 00" SignatureOffset="0x0"/>
+        </PatchList>
+    </Metadata>
+</Patch>
