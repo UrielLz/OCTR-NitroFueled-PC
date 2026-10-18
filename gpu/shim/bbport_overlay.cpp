@@ -61,6 +61,7 @@ std::atomic<bool> ultrawide_prompt{false};
 bool ultrawide_prompt_checked = false;
 std::atomic<bool> pad_rescan_requested{false}; // SacredFire: the menu's "Rescan controllers"
 bool l3_down = false, r3_down = false;
+Uint64 r3_last_click = 0; ///< Ultrawide: doble clic de R3
 bool dirty = false; // settings changed while open: saved on close
 float base_scale = 1.0f;
 
@@ -782,6 +783,31 @@ void Menu() {
                                   "Убрать рамку окна в оконном режиме."));
     }
 
+    // Ultrawide: el HUD en pantallas mas anchas que 16:9.
+    ImGui::SeparatorText("HUD (ultrawide)");
+    {
+        const char* modes[] = {BbSettings::MenuText("Anchored to the edges", "У краёв экрана"),
+                               BbSettings::MenuText("Centered 16:9", "По центру 16:9"),
+                               BbSettings::MenuText("Stretched (original)", "Растянутый (как в игре)")};
+        const int current = std::clamp(s.hud_mode.load(), 0, 2);
+        if (ImGui::BeginCombo(BbSettings::MenuText("HUD layout", "Расположение HUD"), modes[current])) {
+            for (int i = 0; i < 3; ++i) {
+                if (ImGui::Selectable(modes[i], i == current)) {
+                    Store(s.hud_mode, i, i != current);
+                }
+            }
+            ImGui::EndCombo();
+        }
+        bool hidden = s.hud_hidden;
+        if (ImGui::Checkbox(BbSettings::MenuText("Hide HUD (Ctrl+Alt+H / R3 x2)", "Скрыть HUD (Ctrl+Alt+H / R3 x2)"), &hidden)) {
+            s.hud_hidden = hidden; // no se guarda: el siguiente arranque vuelve a mostrarlo
+        }
+        Hint(BbSettings::MenuText(
+            "Layout: only on screens wider than 16:9. Hiding the HUD also hides the game's menus: "
+            "press Ctrl+Alt+H (or double-click R3 on a controller) again to bring them back.",
+            "Только на экранах шире 16:9. Скрытый HUD скрывает и меню игры: Ctrl+Alt+H возвращает их."));
+    }
+
     ImGui::SeparatorText(BbSettings::MenuText("Other", "Прочее"));
     Checkbox(BbSettings::MenuText("FPS counter in corner", "Счётчик FPS в углу"), s.show_fps);
     // SacredFire: the Steam Deck sometimes shows a controller connected after launch only to a
@@ -1112,6 +1138,14 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
+        // Ultrawide: Ctrl+Alt+H muestra u oculta el HUD del juego. El juego no usa Ctrl, Alt ni
+        // H (Shift izquierdo es Circulo, por eso no entra en la combinacion).
+        if (down && !event.key.repeat && event.key.key == SDLK_H &&
+            (event.key.mod & SDL_KMOD_CTRL) != 0 && (event.key.mod & SDL_KMOD_ALT) != 0) {
+            auto& hidden = BbSettings::Get().hud_hidden;
+            hidden = !hidden;
+            return true;
+        }
         if (down && !event.key.repeat &&
             (event.key.key == SDLK_INSERT || (menu_open && event.key.key == SDLK_ESCAPE))) {
             SetOpen(event.key.key == SDLK_INSERT ? !is_open : false);
@@ -1136,6 +1170,18 @@ bool HandleEvent(const SDL_Event& event) {
             l3_down = down;
         } else if (button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
             r3_down = down;
+        }
+        // Ultrawide: doble clic de R3 (el juego no usa el clic del stick derecho) muestra u oculta
+        // el HUD. L3+R3 sigue abriendo el menu.
+        if (down && button == SDL_GAMEPAD_BUTTON_RIGHT_STICK && !l3_down) {
+            const Uint64 now = SDL_GetTicks();
+            if (r3_last_click != 0 && now - r3_last_click <= 400) {
+                auto& hidden = BbSettings::Get().hud_hidden;
+                hidden = !hidden;
+                r3_last_click = 0;
+                return true;
+            }
+            r3_last_click = now;
         }
         if (down && l3_down && r3_down) {
             SetOpen(!is_open);

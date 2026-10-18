@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <unordered_map>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -625,6 +626,19 @@ private:
     bool pipeline_is_compute = false; ///< bbport: the bound pipeline of BindResources
     bool scene_debug_frame = false; ///< BB_SCENE_DEBUG: this frame's passes are printed
     bool last_draw_display = false; ///< the previous draw targeted a display buffer
+    // Ultrawide: los dibujos del HUD (los del buffer de pantalla despues del primero, que copia
+    // la escena) se comprimen en X a una franja 16:9 centrada: hud_scale y hud_offset (pixeles
+    // del juego) se aplican al viewport y al scissor. hud_scale = 1 deja el dibujo intacto.
+    float hud_scale = 1.0f;
+    float hud_offset = 0.0f;
+    u32 hud_frame = 0;      ///< cuadro de hud_boxes
+    u32 hud_log_lines = 0;  ///< BB_HUD_LOG: lineas impresas
+    u32 hud_menu_hold = 0;      ///< cuadros que el HUD sigue en modo menu (centrado)
+    bool hud_frame_wide = false; ///< este cuadro es de menu o carga (ver DrawRecord)
+    u32 hud_frame_full = 0;      ///< dibujos a pantalla completa en este cuadro
+    u32 hud_frame_panels = 0;    ///< paneles anchos (>=45%, no completos) en este cuadro
+    bool hud_log_frame = false;  ///< BB_HUD_LOG: este cuadro se registra
+    std::unordered_map<u64, u32> hud_boxes, hud_prev_boxes; ///< cajas del HUD por cuadro
     // SacredFire: FSR 1 in the display pass (bbport.ini fsr1). CTR stretches its finished scene
     // (the last pass before the display pass) into the larger display buffer and draws the HUD
     // on top; while the display pass samples that image it reads its FSR 1 upscale instead.

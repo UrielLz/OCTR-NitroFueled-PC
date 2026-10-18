@@ -62,7 +62,7 @@ RENDER_SCALES={'480':480/1080,'720':720/1080,'1620':1.5,'2160':2.0}
 # the camera follows its aspect. Found in the EU 1.00 executable (0x12e6bc1).
 OUTPUT_SIZE_SIGNATURE=('41 8b 44 24 10 85 c0 7f 05 41 8b 44 24 08 41 89 86 40 05 00 00 '
                        '41 8b 44 24 14 85 c0 7f 05 41 8b 44 24 0c 41 89 86 44 05 00 00 '
-                       '41 8b 44 24 18 41 89 86 88 04 00 00')
+                       '41 8b 44 24 18 41 89 ?? 88 04 00 00')  # ??: 86, o 96 con el parche de 60 FPS ya aplicado
 OUTPUT_DOUBLE_SIGNATURE='01 c9 41 89 8e 40 05 00 00 45 8b 86 44 05 00 00 45 01 c0'
 
 
