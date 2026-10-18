@@ -140,6 +140,89 @@ def theme_patches(settings):
     return [(f'theme/{theme}',None,meta)]
 
 
+# Ultrawide: the display setup at 0x17a9d61 reads the output width from the game's settings
+# (mov 0x10(%r12),%eax; test; jg; mov 0x8(%r12),%eax). A wider value gives a wider display buffer;
+# the camera widens with it (Hor+) and the renderer keeps the HUD at 16:9 (vk_rasterizer.cpp).
+# bbport.ini ultrawide=auto (default) sizes it from the game's monitor (BB_DISPLAY), =off turns it
+# off, =WIDTH forces a width; BB_ULTRAWIDE overrides. Only on the 1080p base path (render_res
+# 1080 or unset): the PS4 Pro path doubles the output size.
+ULTRAWIDE_SIGNATURE='41 8b 44 24 10 85 c0 7f 05 41 8b 44 24 08 41 89 86 40 05 00 00'
+ULTRAWIDE_MANUAL=('CrashTeamRacingUltrawide.xml/','CTR_Ultrawide.xml/')
+
+
+def ultrawide_width(display_w, display_h, height=1080, step=64):
+    """Game output width for a monitor (a multiple of `step` at `height` lines), or None for
+    16:9 and narrower screens."""
+    if display_w <= 0 or display_h <= 0 or display_w / display_h <= 16 / 9 + 0.02:
+        return None
+    width = round(height * display_w / display_h / step) * step
+    return min(max(width, 1984), 4096)
+
+
+def game_display_size(root, wanted=None):
+    """(width, height) of the game's monitor from bb-gpu-capabilities --displays (BB_DISPLAY:
+    its number in that list or a part of its name; otherwise the primary one), or None."""
+    import subprocess
+    names=('bb-gpu-capabilities.exe','bb-gpu-capabilities')
+    tool=next((root/d/n for d in ('bin','out') for n in names if (root/d/n).is_file()),None)
+    if tool is None:
+        return None
+    try:
+        out=subprocess.run([str(tool),'--displays'],capture_output=True,text=True,timeout=10).stdout
+    except (OSError,subprocess.SubprocessError):
+        return None
+    displays=[]
+    for line in out.splitlines():
+        parts=line.split('\t')
+        if len(parts)>=3 and 'x' in parts[1]:
+            w,_,h=parts[1].partition('x')
+            if w.isdigit() and h.isdigit():
+                displays.append((parts[0],int(w),int(h),parts[2].strip()=='1'))
+    if not displays:
+        return None
+    chosen=None
+    if wanted:
+        if wanted.isdigit() and 1<=int(wanted)<=len(displays):
+            chosen=displays[int(wanted)-1]
+        else:
+            chosen=next((d for d in displays if wanted.lower() in d[0].lower()),None)
+    chosen=chosen or next((d for d in displays if d[3]),displays[0])
+    return chosen[1],chosen[2]
+
+
+def ultrawide_patches(settings, root, selected=()):
+    """The built-in ultrawide patch element, or [] (see ULTRAWIDE_SIGNATURE)."""
+    s=settings or {}
+    mode=(os.environ.get('BB_ULTRAWIDE') or s.get('ultrawide') or 'auto').strip().lower()
+    if mode in ('off','0','no'):
+        return []
+    if any(key.startswith(ULTRAWIDE_MANUAL) for key,_,_ in selected):
+        print('Ultrawide: a manual ultrawide patch is on; automatic width skipped')
+        return []
+    plan=render_plan(s)
+    if plan is not None and plan['pro']:
+        print(f'Ultrawide: off with internal resolution {plan["label"]} (only on the 1080p path)')
+        return []
+    if mode.isdigit():
+        width=min(max(int(mode)//64*64,1984),4096)
+        source=f'ultrawide={mode}'
+    else:
+        size=game_display_size(root,os.environ.get('BB_DISPLAY'))
+        if size is None:
+            print('Ultrawide: monitor size unknown; automatic width skipped')
+            return []
+        width=ultrawide_width(*size)
+        if width is None:
+            return []
+        source=f'monitor {size[0]}x{size[1]}'
+    meta=ET.Element('Metadata',Name=f'Ultrawide {width}x1080',AppVer=APP_VERSION,AppElf='eboot.bin')
+    ET.SubElement(ET.SubElement(meta,'PatchList'),'Line',Type='bytes',Address='0x017a9d61',
+                  Value='b8'+struct.pack('<I',width).hex()+'90'*9,Signature=ULTRAWIDE_SIGNATURE,
+                  SignatureOffset='0x0')
+    print(f'Ultrawide: game output {width}x1080 ({source})')
+    return [(f'ultrawide/{width}',None,meta)]
+
+
 def read_settings(path):
     """bbport.ini as a dict (key=value lines; # comments)."""
     settings={}
@@ -298,8 +381,9 @@ def main():
     segments=eboot_segments(elf)
     found=external_patches(a.patches_dir,a.app_version,a.title_id)
     settings=read_settings(a.settings)
-    writes=compile_external(external_selection(found,a.patches_config,settings)+render_patches(settings)
-                            +theme_patches(settings),
+    selected=external_selection(found,a.patches_config,settings)
+    writes=compile_external(selected+render_patches(settings)+theme_patches(settings)
+                            +ultrawide_patches(settings,root,selected),
                             segments,elf)
     write_blob(a.out,writes)
     print(f'Patches: {len(writes)} writes from {len(found)} available patches')

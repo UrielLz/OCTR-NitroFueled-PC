@@ -130,6 +130,16 @@ jobs:
           mv dist/CTR-NitroFueled-PC-portable-windows.zip "dist/$asset"
           mv dist/CTR-NitroFueled-PC-portable-windows.zip.sha256 "dist/$asset.sha256"
           (cd dist && sha256sum "$asset" > "$asset.sha256" && sha256sum --check "$asset.sha256")
+          # Fork ultrawide: the drop-in mod (only the changed files), from the unpacked build.
+          python3 packaging/ultrawide/make_mod.py dist/CTR-NitroFueled-PC-portable --version "$version" --out dist/mod
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ultrawide-mod
+          path: |
+            dist/mod/*.zip
+            dist/mod/*.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
       - uses: actions/upload-artifact@v7
         with:
           name: windows-build

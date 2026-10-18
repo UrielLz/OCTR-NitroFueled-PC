@@ -237,3 +237,43 @@ class GamePatchTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class UltrawideTests(unittest.TestCase):
+    def test_width_follows_the_monitor(self):
+        self.assertEqual(patches.ultrawide_width(3440, 1440), 2560)
+        self.assertEqual(patches.ultrawide_width(2560, 1080), 2560)
+        self.assertEqual(patches.ultrawide_width(5120, 1440), 3840)
+        self.assertEqual(patches.ultrawide_width(3840, 1600), 2560)
+        self.assertIsNone(patches.ultrawide_width(1920, 1080))
+        self.assertIsNone(patches.ultrawide_width(2560, 1600))
+        self.assertIsNone(patches.ultrawide_width(0, 0))
+
+    def test_patch_line_and_skips(self):
+        root = Path(tempfile.mkdtemp())
+        with patch.dict('os.environ', {'BB_ULTRAWIDE': ''}, clear=False), \
+             patch.object(patches, 'game_display_size', return_value=(3440, 1440)):
+            found = patches.ultrawide_patches({}, root)
+            self.assertEqual(len(found), 1)
+            line = found[0][2].find('PatchList/Line')
+            self.assertEqual(line.get('Address'), '0x017a9d61')
+            self.assertEqual(line.get('Value'), 'b8000a0000' + '90' * 9)
+            self.assertEqual(patches.ultrawide_patches({'ultrawide': 'off'}, root), [])
+            self.assertEqual(patches.ultrawide_patches({'render_res': '2160'}, root), [])
+            manual = [('CrashTeamRacingUltrawide.xml/Ultrawide 2560x1080', None, None)]
+            self.assertEqual(patches.ultrawide_patches({}, root, manual), [])
+            forced = patches.ultrawide_patches({'ultrawide': '3840'}, root)
+            self.assertEqual(forced[0][2].find('PatchList/Line').get('Value'), 'b8000f0000' + '90' * 9)
+        with patch.object(patches, 'game_display_size', return_value=(1920, 1080)):
+            self.assertEqual(patches.ultrawide_patches({}, root), [])
+
+    def test_display_list_parsing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'bin').mkdir()
+            tool = root / 'bin' / 'bb-gpu-capabilities'
+            tool.write_text('#!/bin/sh\nprintf "DELL\\t1920x1080\\t0\\nLG ULTRAWIDE\\t3440x1440\\t1\\n"\n')
+            tool.chmod(0o755)
+            self.assertEqual(patches.game_display_size(root), (3440, 1440))
+            self.assertEqual(patches.game_display_size(root, '1'), (1920, 1080))
+            self.assertEqual(patches.game_display_size(root, 'ultra'), (3440, 1440))
