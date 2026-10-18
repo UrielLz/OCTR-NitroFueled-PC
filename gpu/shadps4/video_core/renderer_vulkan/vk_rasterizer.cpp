@@ -1679,25 +1679,36 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                     hud_frame = frame;
                     hud_prev_boxes.swap(hud_boxes);
                     hud_boxes.clear();
+                    // Menus y pantallas de carga: un cuadro con un panel ancho (fondo, barra,
+                    // ventana) se dibuja entero en la franja 16:9 centrada, para que el texto y
+                    // los iconos no se separen de sus paneles. Se mantiene 10 cuadros despues del
+                    // ultimo panel ancho para que no parpadee en las transiciones.
+                    hud_menu_hold = hud_frame_wide ? 10u : hud_menu_hold > 0 ? hud_menu_hold - 1 : 0u;
+                    hud_frame_wide = false;
+                    hud_log_frame = log && (frame % 300u) == 0u;
                 }
                 const u64 key = (u64(std::bit_cast<u32>(b.min_x)) << 32) |
                                 std::bit_cast<u32>(b.max_x);
                 hud_boxes[key] += 1;
                 const auto prev = hud_prev_boxes.find(key);
                 const bool repeated = b.valid && prev != hud_prev_boxes.end() && prev->second >= 4;
+                const bool wide = u0 >= 0.0f && !repeated && u1 - u0 >= 0.45f;
+                hud_frame_wide = hud_frame_wide || wide;
+                const bool menu = hud_menu_hold > 0 || hud_frame_wide;
                 int zone = 1; // 0 izquierda, 1 centro, 2 derecha
-                if (u0 >= 0.0f && !repeated && u1 - u0 < 0.45f) {
+                if (!menu && u0 >= 0.0f && !repeated && u1 - u0 < 0.45f) {
                     const float centre = (u0 + u1) * 0.5f;
                     zone = centre < 0.36f ? 0 : centre > 0.64f ? 2 : 1;
                 }
                 hud_offset = free * 0.5f * float(zone);
-                if (log && hud_log_lines < 400) {
+                // BB_HUD_LOG=1: un cuadro de cada 300 (unos 5 s a 60 FPS), hasta 6000 lineas.
+                if (hud_log_frame && hud_log_lines < 6000) {
                     ++hud_log_lines;
                     std::printf("HUD: frame %u vs %016llx clip_off %d idx %d n %u box %.3f..%.3f "
-                                "%s u %.3f..%.3f rep %d zone %d\n",
+                                "%s u %.3f..%.3f rep %d menu %d zone %d\n",
                                 frame, (unsigned long long)vs.pgm_hash, int(regs.IsClipDisabled()),
                                 int(is_indexed), u32(regs.num_indices), b.min_x, b.max_x, space,
-                                u0, u1, int(repeated), zone);
+                                u0, u1, int(repeated), int(menu), zone);
                 }
             }
         }
