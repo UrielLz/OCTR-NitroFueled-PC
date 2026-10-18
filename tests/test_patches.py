@@ -259,7 +259,9 @@ class UltrawideTests(unittest.TestCase):
             self.assertEqual(line.get('Address'), '0x017a9d61')
             self.assertEqual(line.get('Value'), 'b8000a0000' + '90' * 9)
             self.assertEqual(patches.ultrawide_patches({'ultrawide': 'off'}, root), [])
-            self.assertEqual(patches.ultrawide_patches({'render_res': '2160'}, root), [])
+            pro = patches.ultrawide_patches({'render_res': '2160'}, root)[0][2].findall('PatchList/Line')
+            self.assertEqual([l.get('Value') for l in pro], ['b8000a0000' + '90' * 9, '7e'])
+            self.assertEqual(len(patches.ultrawide_patches({'render_res': '1440'}, root)[0][2].findall('PatchList/Line')), 1)
             manual = [('CrashTeamRacingUltrawide.xml/Ultrawide 2560x1080', None, None)]
             self.assertEqual(patches.ultrawide_patches({}, root, manual), [])
             forced = patches.ultrawide_patches({'ultrawide': '3840'}, root)

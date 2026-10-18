@@ -200,9 +200,6 @@ def ultrawide_patches(settings, root, selected=()):
         print('Ultrawide: a manual ultrawide patch is on; automatic width skipped')
         return []
     plan=render_plan(s)
-    if plan is not None and plan['pro']:
-        print(f'Ultrawide: off with internal resolution {plan["label"]} (only on the 1080p path)')
-        return []
     if mode.isdigit():
         width=min(max(int(mode)//64*64,1984),4096)
         source=f'ultrawide={mode}'
@@ -216,10 +213,19 @@ def ultrawide_patches(settings, root, selected=()):
             return []
         source=f'monitor {size[0]}x{size[1]}'
     meta=ET.Element('Metadata',Name=f'Ultrawide {width}x1080',AppVer=APP_VERSION,AppElf='eboot.bin')
-    ET.SubElement(ET.SubElement(meta,'PatchList'),'Line',Type='bytes',Address='0x017a9d61',
+    patch_list=ET.SubElement(meta,'PatchList')
+    ET.SubElement(patch_list,'Line',Type='bytes',Address='0x017a9d61',
                   Value='b8'+struct.pack('<I',width).hex()+'90'*9,Signature=ULTRAWIDE_SIGNATURE,
                   SignatureOffset='0x0')
-    print(f'Ultrawide: game output {width}x1080 ({source})')
+    if plan is not None and plan['pro'] and not plan['single']:
+        # Ruta PS4 Pro: el juego duplica la salida (ancho y alto) y la escena se dibuja con la
+        # escala interna sobre ese ancho; en 2160p la escena ultrawide no cabe en 1792 MiB.
+        if plan['heap']:
+            ET.SubElement(patch_list,'Line',Type='bytes',Address='0x01fbb93e',Value='7e',
+                          Signature=GPU_HEAP_SIGNATURE,SignatureOffset='0x6')
+        print(f'Ultrawide: game output {width*2}x2160, internal {plan["label"]} ({source})')
+    else:
+        print(f'Ultrawide: game output {width}x1080 ({source})')
     return [(f'ultrawide/{width}',None,meta)]
 
 

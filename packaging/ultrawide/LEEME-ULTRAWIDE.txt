@@ -28,8 +28,8 @@ Ajustes (bbport.ini)
   ultrawide=off     sin ultrawide
   ultrawide=3840    fuerza un ancho (multiplo de 64, alto 1080)
   hud_mode=0|1|2    bordes / centrado / estirado
-  Solo con resolucion interna 1080p: en 1440p o mas el juego usa otro camino de render y el
-  ultrawide se desactiva solo (lo indica last_run.log).
+  Funciona con cualquier resolucion interna. En 1440p y 4K el juego dibuja al doble (5120x2160
+  en 21:9); con monitores 3440x1440 se recomienda 1440p.
 
 Problemas
   Si algo se ve mal, abre "Jugar_HUD_log.bat", reproduce el problema y comparte last_run.log.
@@ -41,6 +41,6 @@ Install: close the game and launcher, extract this zip over your port folder (v0
 It detects your monitor's aspect ratio (21:9, 32:9...) and widens the picture (Hor+). The race
 HUD is anchored to the screen edges; menus, pause and loading screens stay centered at 16:9 with
 full-screen backgrounds. Ctrl+Alt+H or double-click R3 toggles the HUD. bbport.ini:
-ultrawide=auto|off|<width>, hud_mode=0 (edges) 1 (centered) 2 (stretched). 1080p internal
-resolution only. Source code: https://github.com/UrielLz/OCTR-NitroFueled-PC (branch ultrawide-hud),
+ultrawide=auto|off|<width>, hud_mode=0 (edges) 1 (centered) 2 (stretched). Works at any internal
+resolution (1440p recommended for 3440x1440). Source code: https://github.com/UrielLz/OCTR-NitroFueled-PC (branch ultrawide-hud),
 GPL-2.0-or-later like the port.
