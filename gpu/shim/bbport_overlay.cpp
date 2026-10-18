@@ -760,6 +760,31 @@ void Menu() {
                                   "Убрать рамку окна в оконном режиме."));
     }
 
+    // Ultrawide: el HUD en pantallas mas anchas que 16:9.
+    ImGui::SeparatorText("HUD (ultrawide)");
+    {
+        const char* modes[] = {BbSettings::MenuText("Anchored to the edges", "У краёв экрана"),
+                               BbSettings::MenuText("Centered 16:9", "По центру 16:9"),
+                               BbSettings::MenuText("Stretched (original)", "Растянутый (как в игре)")};
+        const int current = std::clamp(s.hud_mode.load(), 0, 2);
+        if (ImGui::BeginCombo(BbSettings::MenuText("HUD layout", "Расположение HUD"), modes[current])) {
+            for (int i = 0; i < 3; ++i) {
+                if (ImGui::Selectable(modes[i], i == current)) {
+                    Store(s.hud_mode, i, i != current);
+                }
+            }
+            ImGui::EndCombo();
+        }
+        bool hidden = s.hud_hidden;
+        if (ImGui::Checkbox(BbSettings::MenuText("Hide HUD (F9)", "Скрыть HUD (F9)"), &hidden)) {
+            s.hud_hidden = hidden; // no se guarda: el siguiente arranque vuelve a mostrarlo
+        }
+        Hint(BbSettings::MenuText(
+            "Only on screens wider than 16:9. Hiding the HUD also hides the game's menus: press F9 "
+            "again to bring them back. Applies at once.",
+            "Только на экранах шире 16:9. Скрытый HUD скрывает и меню игры: F9 возвращает их. Сразу."));
+    }
+
     ImGui::SeparatorText(BbSettings::MenuText("Other", "Прочее"));
     Checkbox(BbSettings::MenuText("FPS counter in corner", "Счётчик FPS в углу"), s.show_fps);
     // SacredFire: the Steam Deck sometimes shows a controller connected after launch only to a
@@ -1049,6 +1074,12 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
+        // Ultrawide: F9 muestra u oculta el HUD del juego.
+        if (down && !event.key.repeat && event.key.key == SDLK_F9) {
+            auto& hidden = BbSettings::Get().hud_hidden;
+            hidden = !hidden;
+            return true;
+        }
         if (down && !event.key.repeat &&
             (event.key.key == SDLK_INSERT || (is_open && event.key.key == SDLK_ESCAPE))) {
             SetOpen(event.key.key == SDLK_INSERT ? !is_open : false);

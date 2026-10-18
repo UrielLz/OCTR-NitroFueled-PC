@@ -1623,7 +1623,12 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // cuando el buffer de pantalla es mas ancho. El primer dibujo (la escena) queda completo.
     hud_scale = 1.0f;
     hud_offset = 0.0f;
-    if (display_draw && !display_start) {
+    // Ultrawide: HUD oculto (F9 o el menu del juego): los dibujos sobre la escena no se graban.
+    if (display_draw && !display_start && BbSettings::Get().hud_hidden.load(std::memory_order_relaxed)) {
+        return;
+    }
+    const int hud_mode = BbSettings::Get().hud_mode.load(std::memory_order_relaxed);
+    if (display_draw && !display_start && hud_mode != 2) {
         static const float hud_aspect = [] {
             const char* env = std::getenv("BB_HUD_ASPECT");
             return env ? float(std::strtod(env, nullptr)) : 16.0f / 9.0f;
@@ -1635,13 +1640,14 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             hud_scale = height * hud_aspect / width;
             const float free = width * (1.0f - hud_scale); // ancho fuera de la franja 16:9
             hud_offset = free * 0.5f;
-            // Ultrawide: BB_HUD_ANCHOR (por defecto 1) pega a los bordes los elementos del
+            // Ultrawide: hud_mode 0 (por defecto) pega a los bordes los elementos del
             // tercio izquierdo y derecho de la franja, como en la pantalla 16:9 original. Lo
             // que no se puede ubicar (formato desconocido, dibujos anchos) queda centrado.
-            static const bool anchor = [] {
+            static const bool anchor_env = [] {
                 const char* env = std::getenv("BB_HUD_ANCHOR");
                 return !env || env[0] != '0';
             }();
+            const bool anchor = anchor_env && hud_mode == 0;
             static const bool log = [] {
                 const char* env = std::getenv("BB_HUD_LOG");
                 return env && env[0] == '1';
