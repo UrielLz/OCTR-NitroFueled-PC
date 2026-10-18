@@ -1658,17 +1658,23 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                                                   is_indexed, index_offset, memory);
                 // Espacio de coordenadas: pixeles del destino (recorte desactivado o valores
                 // dentro de su ancho) o NDC [-1, 1].
+                // Las cajas en pixeles pueden salirse de la pantalla (fondos con margen, paneles
+                // que entran deslizandose): se aceptan hasta media pantalla fuera de cada lado.
                 float u0 = -1.0f, u1 = -1.0f;
+                bool known = false;
                 const char* space = "?";
                 if (b.valid) {
                     if (!regs.IsClipDisabled() && b.min_x >= -1.01f && b.max_x <= 1.01f &&
                         b.max_x - b.min_x < 1.9f) {
                         u0 = (b.min_x + 1.0f) * 0.5f;
                         u1 = (b.max_x + 1.0f) * 0.5f;
+                        known = true;
                         space = "ndc";
-                    } else if (b.min_x >= -8.0f && b.max_x <= width + 8.0f && b.max_x > 2.0f) {
+                    } else if (b.min_x >= -0.5f * width && b.max_x <= 1.5f * width &&
+                               b.max_x - b.min_x > 2.5f) {
                         u0 = b.min_x / width;
                         u1 = b.max_x / width;
+                        known = true;
                         space = "px";
                     }
                 }
@@ -1691,16 +1697,28 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                                 std::bit_cast<u32>(b.max_x);
                 hud_boxes[key] += 1;
                 const auto prev = hud_prev_boxes.find(key);
-                const bool repeated = b.valid && prev != hud_prev_boxes.end() && prev->second >= 4;
-                const bool wide = u0 >= 0.0f && !repeated && u1 - u0 >= 0.45f;
-                hud_frame_wide = hud_frame_wide || wide;
+                // Solo una caja diminuta (quad unidad) repetida es geometria local; un fondo a
+                // pantalla completa dibujado varias veces sigue siendo una posicion real.
+                const bool repeated = b.valid && b.max_x - b.min_x <= 2.5f &&
+                                      prev != hud_prev_boxes.end() && prev->second >= 4;
+                const bool usable = known && !repeated;
+                const bool wide = usable && u1 - u0 >= 0.45f;
+                // Fondos, oscurecidos y fundidos que cubren todo el ancho: se dejan a pantalla
+                // completa (sin franja) para que no queden bordes de otro tono a los lados.
+                const bool full = usable && u0 <= 0.02f && u1 >= 0.98f;
+                // Un panel (ancho pero no a pantalla completa) marca el cuadro como menu; los
+                // fondos completos no, porque la carrera tambien dibuja capas a todo el ancho.
+                hud_frame_wide = hud_frame_wide || (wide && !full);
                 const bool menu = hud_menu_hold > 0 || hud_frame_wide;
                 int zone = 1; // 0 izquierda, 1 centro, 2 derecha
-                if (!menu && u0 >= 0.0f && !repeated && u1 - u0 < 0.45f) {
+                if (full) {
+                    hud_scale = 1.0f;
+                    zone = -1;
+                } else if (!menu && usable && u1 - u0 < 0.45f) {
                     const float centre = (u0 + u1) * 0.5f;
                     zone = centre < 0.36f ? 0 : centre > 0.64f ? 2 : 1;
                 }
-                hud_offset = free * 0.5f * float(zone);
+                hud_offset = zone < 0 ? 0.0f : free * 0.5f * float(zone);
                 // BB_HUD_LOG=1: un cuadro de cada 300 (unos 5 s a 60 FPS), hasta 6000 lineas.
                 if (hud_log_frame && hud_log_lines < 6000) {
                     ++hud_log_lines;
