@@ -8,7 +8,7 @@ Instalacion
   2. Extrae este zip ENCIMA de tu carpeta del port (la que tiene "Crash(TM) Team Racing
      Nitro-Fueled.exe") y acepta reemplazar. Tus guardados y ajustes no se tocan.
   3. Abre el launcher y juega. Si te pregunta por ultrawide, responde Si.
-  Requiere el port v0.5.3 (OCTR-NitroFueled-PC de Ryu7w7).
+  Requiere el port v0.6 (OCTR-NitroFueled-PC de Ryu7w7).
 
 Que hace
   Usa el ultrawide del port (el juego se dibuja al tamano de tu monitor) y agrega:
@@ -27,11 +27,11 @@ Ajustes (bbport.ini)
 
 Problemas
   Si algo se ve mal, abre "Jugar_HUD_log.bat", reproduce el problema y comparte last_run_*.log.
-  Para desinstalar: vuelve a extraer el zip original del port v0.5.3 encima.
+  Para desinstalar: vuelve a extraer el zip original del port v0.6 encima.
 
 ENGLISH
 
-Install: close the game and launcher, extract this zip over your port folder (v0.5.3), play and
+Install: close the game and launcher, extract this zip over your port folder (v0.6), play and
 answer Yes to the ultrawide question. On top of the port's ultrawide, the race HUD is anchored to
 the screen edges, menus, pause and loading screens stay centered at 16:9 with full-screen
 backgrounds, and ultrawide also works on game dumps with the 60 FPS patch built in.
